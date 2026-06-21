@@ -83,19 +83,6 @@ class BlipITM(BlipBase):
             )
             itm_output = self.itm_head(output.last_hidden_state[:, 0, :])
             return itm_output
-        
-        elif match_head == "itm-e":
-            encoder_input_ids = text.input_ids.clone()
-            encoder_input_ids[:, 0] = self.tokenizer.enc_token_id  # extra code
-            output = self.text_encoder(
-                encoder_input_ids,
-                attention_mask=text.attention_mask,
-                encoder_hidden_states=image_embeds,
-                encoder_attention_mask=image_atts,
-                return_dict=True,
-            )
-            itm_output = self.itm_head(output.last_hidden_state[:, 0, :])
-            return itm_output,output.last_hidden_state[:, 0, :]
 
         elif match_head == "itc":
             text_output = self.text_encoder(
