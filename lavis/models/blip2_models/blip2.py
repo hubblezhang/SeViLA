@@ -103,11 +103,20 @@ class Blip2Base(BaseModel):
         return msg
     
     def load_qformer_loc(self):
-        url_or_filename = '/nas-hdd/shoubin/pretrained_model/hub/checkpoints/qformer_loc.pth'
+        # first check local path then fall back to the URL path
+        import os
+        url_or_filename = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            'sevila_checkpoints', 'qformer_loc.pth')
+        if os.path.isfile(url_or_filename):
+            pass
+        else:
+            url_or_filename = 'https://huggingface.co/Shoubin/SeViLA/resolve/main/qformer_loc.pth'
         checkpoint = torch.load(url_or_filename, map_location="cpu")
         state_dict = checkpoint["model"]
         msg = self.load_state_dict(state_dict, strict=False)
         logging.info("load checkpoint from %s" % url_or_filename)
+        return msg
 
 def disabled_train(self, mode=True):
     """Overwrite model.train with this function to make sure train/eval mode

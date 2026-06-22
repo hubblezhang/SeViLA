@@ -427,9 +427,17 @@ def create_eva_vit_g(img_size=224,drop_path_rate=0.4,use_checkpoint=False,precis
         use_checkpoint=use_checkpoint,
     )  
     url = "https://storage.googleapis.com/sfr-vision-language-research/LAVIS/models/BLIP2/eva_vit_g.pth"
-    cached_file = download_cached_file(
-       url, check_hash=False, progress=True
-    )
+    # first try local copy in sevila_checkpoints/
+    import os
+    local_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        'sevila_checkpoints', 'eva_vit_g.pth')
+    if os.path.isfile(local_path):
+        cached_file = local_path
+    else:
+        cached_file = download_cached_file(
+           url, check_hash=False, progress=True
+        )
     state_dict = torch.load(cached_file, map_location="cpu")    
     interpolate_pos_embed(model,state_dict)
     
