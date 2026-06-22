@@ -23,14 +23,12 @@ import torch.nn.functional as F
 from transformers import BatchEncoding, PreTrainedTokenizer
 
 from transformers.activations import ACT2FN
-from transformers.file_utils import (
-    ModelOutput,
-)
 from transformers.modeling_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     BaseModelOutputWithPoolingAndCrossAttentions,
     CausalLMOutputWithCrossAttentions,
     MaskedLMOutput,
+    ModelOutput,
     MultipleChoiceModelOutput,
     NextSentencePredictorOutput,
     QuestionAnsweringModelOutput,

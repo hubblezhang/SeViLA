@@ -156,3 +156,44 @@ def prune_linear_layer(layer, index, dim=0):
 
 # 注意：ALL_LAYERNORM_LAYERS 是一个 list，不是函数 —— modeling_t5 里把它当值用
 ALL_LAYERNORM_LAYERS = _ALL_LAYERNORM_LAYERS
+
+
+# ============================================================
+# assert_device_map / get_device_map
+# 用于多 GPU 模型并行，老版 transformers 放在 utils.model_parallel_utils 里，新版删除了
+# 这里提供等价实现，仅在 parallelize()/de_parallelize() 这类方法里用到。
+# ============================================================
+def get_device_map(n_layers, devices):
+    """把 n_layers 层模型大致均匀分配到多个 devices 上。返回 dict: {layer_idx → device}."""
+    if not devices or n_layers <= 0:
+        return None
+    devices = list(devices)
+    n_devices = len(devices)
+    n_layers_per_device = max(1, n_layers // n_devices)
+    device_map = {}
+    for i in range(n_layers):
+        device_map[i] = devices[min(i // n_layers_per_device, n_devices - 1)]
+    return device_map
+
+
+def assert_device_map(device_map, num_blocks):
+    """校验 device_map 覆盖所有 block。"""
+    if device_map is None:
+        return True
+    blocks_in_device_map = sorted(list(device_map.keys()))
+    if len(blocks_in_device_map) == 0:
+        raise ValueError("device_map is empty but the model has blocks.")
+    if blocks_in_device_map[0] != 0 or blocks_in_device_map[-1] != num_blocks - 1:
+        raise ValueError(
+            f"device_map covers layers {blocks_in_device_map[0]} to {blocks_in_device_map[-1]}, "
+            f"but the model has blocks 0 to {num_blocks - 1}."
+        )
+    if len(blocks_in_device_map) != num_blocks:
+        raise ValueError(
+            f"device_map has {len(blocks_in_device_map)} entries but the model has {num_blocks} blocks."
+        )
+    # 校验连续
+    for i in range(1, num_blocks):
+        if blocks_in_device_map[i] - blocks_in_device_map[i - 1] != 1:
+            raise ValueError("device_map must contain consecutive block indices.")
+    return True
