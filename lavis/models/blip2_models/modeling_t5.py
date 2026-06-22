@@ -34,11 +34,13 @@ from transformers.modeling_outputs import (
     Seq2SeqModelOutput,
 )
 from transformers.modeling_utils import PreTrainedModel
-from transformers.pytorch_utils import (
+from lavis.common.lavis_pytorch_utils import (
     ALL_LAYERNORM_LAYERS,
     find_pruneable_heads_and_indices,
     prune_linear_layer,
 )
+# apply_chunking_to_forward 在本文件别处也用到，这里统一入口
+from lavis.common.lavis_pytorch_utils import apply_chunking_to_forward
 from transformers.utils import (
     DUMMY_INPUTS,
     DUMMY_MASK,
