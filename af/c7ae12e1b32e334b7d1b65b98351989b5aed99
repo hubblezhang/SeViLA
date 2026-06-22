@@ -1,0 +1,422 @@
+lavis/models/blip2_models/modeling_opt.py
+  s_bc8ba04ea8e89e::t_4fe527624307f3 438 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a3933838f61ccc2c96d84da","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Single":438}]}]}
+  s_bc8ba04ea8e89e::t_c57dd8baa19b96 899 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a39338c8f61ccc2c96d84dd","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Single":899}]}]}
+lavis/models/blip2_models/Qformer.py
+  s_bc8ba04ea8e89e::t_b3938bd5cc7599 660 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a3932f38f61ccc2c96d84a1","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Single":660}]}]}
+  s_bc8ba04ea8e89e::t_a69131af72be9a 970-971 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a3933058f61ccc2c96d84a7","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Range":[970,971]}]}]}
+  s_bc8ba04ea8e89e::t_49c2ce91f0c8c2 1133-1134 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a39330f8f61ccc2c96d84aa","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Range":[1133,1134]}]}]}
+lavis/models/blip_models/nlvr_encoder.py
+  s_bc8ba04ea8e89e::t_7fdb1b641b006d 663 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a39333c8f61ccc2c96d84bc","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Single":663}]}]}
+lavis/models/med.py
+  s_bc8ba04ea8e89e::t_7b30d587d5e999 701 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a39331e8f61ccc2c96d84b0","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Single":701}]}]}
+  s_bc8ba04ea8e89e::t_e4d2a1a0130b7d 1132-1133 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a3933348f61ccc2c96d84b9","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Range":[1132,1133]}]}]}
+  s_bc8ba04ea8e89e::t_0834206de79275 1006-1007 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a39332b8f61ccc2c96d84b6","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Range":[1006,1007]}]}]}
+lavis/models/blip2_models/modeling_t5.py
+  s_bc8ba04ea8e89e::t_40b8e685e5957a 1453,1456-1457,1459 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a3933488f61ccc2c96d84c2","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Single":1453},{"Range":[1456,1457]},{"Single":1459}]}]}
+  s_bc8ba04ea8e89e::t_ace7197610955a 1653,1657-1658,1660 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a3933598f61ccc2c96d84c8","tool_type":"agent","tool_id":"Edit","line_ranges":[{"Single":1653},{"Range":[1657,1658]},{"Single":1660}]}]}
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "afc7ae12e1b32e334b7d1b65b98351989b5aed99",
+  "prompts": {},
+  "sessions": {
+    "s_bc8ba04ea8e89e": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a33b3d50964fc3770d08c9f",
+        "model": "Doubao-Seed-2.0-Code__dev"
+      },
+      "human_author": "zhangwenbo.robin <zhangwenbo.robin@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {
+    "lavis/models/blip2_models/Qformer.py": [
+      {
+        "hash": "s_bc8ba04ea8e89e::t_b3938bd5cc7599",
+        "line_ranges": [
+          {
+            "Single": 660
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a3932f38f61ccc2c96d84a1",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Single": 660
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "hash": "s_bc8ba04ea8e89e::t_a69131af72be9a",
+        "line_ranges": [
+          {
+            "Range": [
+              970,
+              971
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a3933058f61ccc2c96d84a7",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Range": [
+                  970,
+                  971
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "hash": "s_bc8ba04ea8e89e::t_49c2ce91f0c8c2",
+        "line_ranges": [
+          {
+            "Range": [
+              1133,
+              1134
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a39330f8f61ccc2c96d84aa",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Range": [
+                  1133,
+                  1134
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "lavis/models/blip2_models/modeling_opt.py": [
+      {
+        "hash": "s_bc8ba04ea8e89e::t_4fe527624307f3",
+        "line_ranges": [
+          {
+            "Single": 438
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a3933838f61ccc2c96d84da",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Single": 438
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "hash": "s_bc8ba04ea8e89e::t_c57dd8baa19b96",
+        "line_ranges": [
+          {
+            "Single": 899
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a39338c8f61ccc2c96d84dd",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Single": 899
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "lavis/models/blip2_models/modeling_t5.py": [
+      {
+        "hash": "s_bc8ba04ea8e89e::t_40b8e685e5957a",
+        "line_ranges": [
+          {
+            "Single": 1453
+          },
+          {
+            "Range": [
+              1456,
+              1457
+            ]
+          },
+          {
+            "Single": 1459
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a3933488f61ccc2c96d84c2",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Single": 1453
+              },
+              {
+                "Range": [
+                  1456,
+                  1457
+                ]
+              },
+              {
+                "Single": 1459
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "hash": "s_bc8ba04ea8e89e::t_ace7197610955a",
+        "line_ranges": [
+          {
+            "Single": 1653
+          },
+          {
+            "Range": [
+              1657,
+              1658
+            ]
+          },
+          {
+            "Single": 1660
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a3933598f61ccc2c96d84c8",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Single": 1653
+              },
+              {
+                "Range": [
+                  1657,
+                  1658
+                ]
+              },
+              {
+                "Single": 1660
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "lavis/models/blip_models/nlvr_encoder.py": [
+      {
+        "hash": "s_bc8ba04ea8e89e::t_7fdb1b641b006d",
+        "line_ranges": [
+          {
+            "Single": 663
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a39333c8f61ccc2c96d84bc",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Single": 663
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "lavis/models/med.py": [
+      {
+        "hash": "s_bc8ba04ea8e89e::t_7b30d587d5e999",
+        "line_ranges": [
+          {
+            "Single": 701
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a39331e8f61ccc2c96d84b0",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Single": 701
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "hash": "s_bc8ba04ea8e89e::t_e4d2a1a0130b7d",
+        "line_ranges": [
+          {
+            "Range": [
+              1132,
+              1133
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a3933348f61ccc2c96d84b9",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Range": [
+                  1132,
+                  1133
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "hash": "s_bc8ba04ea8e89e::t_0834206de79275",
+        "line_ranges": [
+          {
+            "Range": [
+              1006,
+              1007
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a39332b8f61ccc2c96d84b6",
+            "tool_type": "agent",
+            "tool_id": "Edit",
+            "line_ranges": [
+              {
+                "Range": [
+                  1006,
+                  1007
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "remote_transcripts": {
+    "s_bc8ba04ea8e89e": {
+      "tool": "trae",
+      "conversation_id": "6a33b3d50964fc3770d08c9f",
+      "session_id": "6a33b3d50964fc3770d08c9f",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_bc8ba04ea8e89e::t_0834206de79275": {
+      "tool": "trae",
+      "conversation_id": "6a33b3d50964fc3770d08c9f",
+      "session_id": "6a33b3d50964fc3770d08c9f",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_bc8ba04ea8e89e::t_40b8e685e5957a": {
+      "tool": "trae",
+      "conversation_id": "6a33b3d50964fc3770d08c9f",
+      "session_id": "6a33b3d50964fc3770d08c9f",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_bc8ba04ea8e89e::t_49c2ce91f0c8c2": {
+      "tool": "trae",
+      "conversation_id": "6a33b3d50964fc3770d08c9f",
+      "session_id": "6a33b3d50964fc3770d08c9f",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_bc8ba04ea8e89e::t_4fe527624307f3": {
+      "tool": "trae",
+      "conversation_id": "6a33b3d50964fc3770d08c9f",
+      "session_id": "6a33b3d50964fc3770d08c9f",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_bc8ba04ea8e89e::t_7b30d587d5e999": {
+      "tool": "trae",
+      "conversation_id": "6a33b3d50964fc3770d08c9f",
+      "session_id": "6a33b3d50964fc3770d08c9f",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_bc8ba04ea8e89e::t_7fdb1b641b006d": {
+      "tool": "trae",
+      "conversation_id": "6a33b3d50964fc3770d08c9f",
+      "session_id": "6a33b3d50964fc3770d08c9f",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_bc8ba04ea8e89e::t_a69131af72be9a": {
+      "tool": "trae",
+      "conversation_id": "6a33b3d50964fc3770d08c9f",
+      "session_id": "6a33b3d50964fc3770d08c9f",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_bc8ba04ea8e89e::t_ace7197610955a": {
+      "tool": "trae",
+      "conversation_id": "6a33b3d50964fc3770d08c9f",
+      "session_id": "6a33b3d50964fc3770d08c9f",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_bc8ba04ea8e89e::t_b3938bd5cc7599": {
+      "tool": "trae",
+      "conversation_id": "6a33b3d50964fc3770d08c9f",
+      "session_id": "6a33b3d50964fc3770d08c9f",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_bc8ba04ea8e89e::t_c57dd8baa19b96": {
+      "tool": "trae",
+      "conversation_id": "6a33b3d50964fc3770d08c9f",
+      "session_id": "6a33b3d50964fc3770d08c9f",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_bc8ba04ea8e89e::t_e4d2a1a0130b7d": {
+      "tool": "trae",
+      "conversation_id": "6a33b3d50964fc3770d08c9f",
+      "session_id": "6a33b3d50964fc3770d08c9f",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    }
+  }
+}
