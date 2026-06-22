@@ -762,16 +762,20 @@ class SeViLA(Blip2Base):
         """
         device = self.device
         x = image_nhwc.to(device)
-        with torch.cuda.amp.autocast(enabled=(device != torch.device("cpu"))):
+        # 统一用 bfloat16：与 T5 一致，避免 fp16/fp32 混精度的 CUBLAS 错误
+        with torch.cuda.amp.autocast(
+            dtype=torch.bfloat16,
+            enabled=(device != torch.device("cpu")),
+        ):
             x = self.visual_encoder(x)
-        x = self.ln_vision_loc(x)
-        atts = torch.ones(x.size()[:-1], dtype=torch.long, device=device)
-        q = self.query_tokens_loc.expand(x.size(0), -1, -1)
-        out = self.Qformer_loc.bert(
-            query_embeds=q, encoder_hidden_states=x,
-            encoder_attention_mask=atts, return_dict=True,
-        )
-        return self.t5_proj_loc(out.last_hidden_state)
+            x = self.ln_vision_loc(x)
+            atts = torch.ones(x.size()[:-1], dtype=torch.long, device=device)
+            q = self.query_tokens_loc.expand(x.size(0), -1, -1)
+            out = self.Qformer_loc.bert(
+                query_embeds=q, encoder_hidden_states=x,
+                encoder_attention_mask=atts, return_dict=True,
+            )
+            return self.t5_proj_loc(out.last_hidden_state)
 
     @torch.no_grad()
     def generate_score(self,
@@ -1215,5 +1219,18 @@ class SeViLA(Blip2Base):
         # need load blip-2 q-former ckpt to q-former_loc
         if 'loc' in task and 'qvh' not in task:
            model.load_qformer_loc()
+
+        # 将 Q-former 与投影层转换为 bfloat16，与 T5 保持一致，避免 fp16/fp32/bf16 混精度导致 CUBLAS 错误
+        _bf16_targets = ('Qformer', 't5_proj', 'ln_vision', 'query_tokens')
+        for name, param in model.named_parameters():
+            if 'visual_encoder' in name or 't5_model' in name:
+                continue
+            if any(t in name for t in _bf16_targets):
+                param.data = param.data.bfloat16()
+        for name, buffer in model.named_buffers():
+            if 'visual_encoder' in name or 't5_model' in name:
+                continue
+            if buffer.is_floating_point():
+                buffer.data = buffer.data.bfloat16()
 
         return model
