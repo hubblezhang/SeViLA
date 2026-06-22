@@ -752,6 +752,28 @@ class SeViLA(Blip2Base):
         return out
     
     @torch.no_grad()
+    def encode_image_to_t5_query(self, image_nhwc):
+        """
+        将一批图像编码成可直接拼进 T5 的 query embedding（脚本可缓存）。
+        Args:
+            image_nhwc: (N, 3, H, W)，已做过 vis_processors 预处理
+        Returns:
+            t5_query: (N, num_query, d_t5)
+        """
+        device = self.device
+        x = image_nhwc.to(device)
+        with torch.cuda.amp.autocast(enabled=(device != torch.device("cpu"))):
+            x = self.visual_encoder(x)
+        x = self.ln_vision_loc(x)
+        atts = torch.ones(x.size()[:-1], dtype=torch.long, device=device)
+        q = self.query_tokens_loc.expand(x.size(0), -1, -1)
+        out = self.Qformer_loc.bert(
+            query_embeds=q, encoder_hidden_states=x,
+            encoder_attention_mask=atts, return_dict=True,
+        )
+        return self.t5_proj_loc(out.last_hidden_state)
+
+    @torch.no_grad()
     def generate_score(self,
         samples,
         use_nucleus_sampling=False,
@@ -761,60 +783,100 @@ class SeViLA(Blip2Base):
         num_captions=1, temperature=1,):
         """
         Args:
-            samples (dict): A dictionary containing the following keys:
-                - image (torch.Tensor): A tensor of shape (batch_size, 3, H, W)
-            use_nucleus_sampling (bool): Whether to use nucleus sampling. If False, use top-k sampling.
-            num_beams (int): Number of beams for beam search. 1 means no beam search.
-            max_length (int): The maximum length of the sequence to be generated.
-            min_length (int): The minimum length of the sequence to be generated.
-            top_p (float): The cumulative probability for nucleus sampling.
-            repetition_penalty (float): The parameter for repetition penalty. 1.0 means no penalty.
-            num_captions (int): Number of captions to be generated for each image.
+            samples (dict):
+                - video (torch.Tensor): (b, t, 3, H, W) 视频帧；或
+                    若提供 frame_t5_query，则可省略（但仍会优先使用 frame_t5_query）。
+                - loc_input (list[str]): 文本 prompt，长度为 b。
+                - main_image (torch.Tensor, optional): (b, 1, 3, H, W) 主图。
+                    与 main_t5_query 二选一。
+                - main_t5_query (torch.Tensor, optional): (b, num_query, d_t5) 预编码
+                    主图 query（优先使用，可省去视觉编码）。
+                - frame_t5_query (torch.Tensor, optional): (b*t, num_query, d_t5)
+                    预编码视频帧 query（优先使用）。
         Returns:
-            captions (list): A list of strings of length batch_size * num_captions.
+            loc_yes (torch.Tensor): (b, t)
         """
-        out = {}
-        image = samples["video"]
-        text_input_loc =  samples['loc_input']
-        
-        # inference with localizer                         
-        b, t, c, w, h = image.shape        
-        image = image.reshape(-1, c, w, h)
-        with torch.cuda.amp.autocast(enabled=(self.device != torch.device("cpu"))):
-            image_embeds = self.visual_encoder(image) # bt, n, c
-            
-        _, n, _ = image_embeds.shape
-        image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(image.device) # bt n c
-        image_embeds_, image_atts_ = image_embeds.detach().clone(), image_atts.detach().clone()
-        image_embeds_ = self.ln_vision_loc(image_embeds_)
-        
-        # text_input_loc = samples['loc_input'] # Q + Prompt: Is this a good frame can answer the question?
-        query_tokens_loc = self.query_tokens_loc.expand(image_embeds_.shape[0], -1, -1)
-        query_output_loc = self.Qformer_loc.bert(
-            query_embeds=query_tokens_loc, encoder_hidden_states=image_embeds_,
-            encoder_attention_mask=image_atts_, return_dict=True)
-        inputs_t5_loc = self.t5_proj_loc(query_output_loc.last_hidden_state)
+        device = self.device
+        text_input_loc = samples['loc_input']
 
-        atts_t5_loc = torch.ones(inputs_t5_loc.size()[:-1], dtype=torch.long).to(image.device)
+        # ------- 主图 query：优先用预编码，否则走视觉 -------
+        main_q = samples.get("main_t5_query")
+        if main_q is None and samples.get("main_image") is not None:
+            m = samples["main_image"]
+            b_m, t_m, _, _, _ = m.shape
+            main_q = self.encode_image_to_t5_query(m.reshape(-1, *m.shape[-3:]))
+            # main_q: (b_m * t_m, num_query, d_t5)
+            if t_m == 1:
+                main_q = main_q  # (b, num_query, d_t5) 当 t_m=1 时即 (b, num_query, d_t5)
+            else:
+                main_q = main_q.reshape(b_m, t_m, main_q.size(-2), main_q.size(-1))[:, 0]
+
+        # ------- 视频帧 query：优先用预编码，否则走视觉 -------
+        frame_q = samples.get("frame_t5_query")
+        if frame_q is None:
+            image = samples["video"]
+            b, t, c, w, h = image.shape
+            image = image.reshape(-1, c, w, h)
+            frame_q = self.encode_image_to_t5_query(image)  # (b*t, num_query, d_t5)
+        else:
+            # 需要推断 b, t；假设 frame_q 的第一维是 b*t
+            b = len(text_input_loc)
+            t = frame_q.size(0) // b
+
+        d_t5 = frame_q.size(-1)
+        num_q = frame_q.size(-2)
+
+        # ------- 文本 prompt 处理 -------
         with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-
+            # Frame: 前缀（每个视频帧都加）
             frame_prefix = self.t5_tokenizer(
                 self.frame_prefix, padding="longest", add_special_tokens=False,
-                truncation=True, max_length=self.max_txt_len, return_tensors="pt").to(image.device) # 
-            #print('frame_prefix 1', frame_prefix.input_ids.shape) 8, 4
-            frame_prefix_id = torch.repeat_interleave(frame_prefix.input_ids, b*t, 0)
-            frame_prefix_mask = torch.repeat_interleave(frame_prefix.attention_mask, b*t, 0)
-            frame_predix_embed = self.t5_model.encoder.embed_tokens(frame_prefix_id)
+                truncation=True, max_length=self.max_txt_len, return_tensors="pt").to(device)
+            frame_prefix_id = torch.repeat_interleave(frame_prefix.input_ids, b * t, dim=0)
+            frame_prefix_mask = torch.repeat_interleave(frame_prefix.attention_mask, b * t, dim=0)
+            frame_prefix_emb = self.t5_model.encoder.embed_tokens(frame_prefix_id)
+
+            # Main Image: 前缀（每个视频帧前都重复一份主图路径，让 T5 看到"主图+帧"）
+            if main_q is not None:
+                main_prefix = self.t5_tokenizer(
+                    ["Main Image: "], padding="longest", add_special_tokens=False,
+                    truncation=True, max_length=self.max_txt_len, return_tensors="pt").to(device)
+                main_prefix_id = torch.repeat_interleave(main_prefix.input_ids, b * t, dim=0)
+                main_prefix_mask = torch.repeat_interleave(main_prefix.attention_mask, b * t, dim=0)
+                main_prefix_emb = self.t5_model.encoder.embed_tokens(main_prefix_id)
+                # 主图 query：在 b 维度上一份，在 b*t 维度上重复 t 次
+                main_q_rep = main_q.repeat_interleave(t, dim=0)  # (b*t, num_query, d_t5)
+                main_q_mask = torch.ones(main_q_rep.size()[:-1], dtype=torch.long, device=device)
+            else:
+                main_prefix_emb = None
+                main_q_rep = None
+
+            # 问题文本
             input_tokens_loc = self.t5_tokenizer(
                 text_input_loc, padding="longest", truncation=True,
-                max_length=self.max_txt_len, return_tensors="pt").to(image.device)
-            #print('input_ids_loc.input_ids', input_tokens_loc.input_ids)
-            input_ids_loc = torch.repeat_interleave(input_tokens_loc.input_ids, t, 0)
-            #print('input_ids_loc', input_ids_loc)
-            input_attention_mask_loc = torch.repeat_interleave(input_tokens_loc.attention_mask, t, 0)
-            inputs_embeds_loc = self.t5_model.encoder.embed_tokens(input_ids_loc)              
-            inputs_embeds_loc = torch.cat([frame_predix_embed, inputs_t5_loc, inputs_embeds_loc], dim=1)
-            encoder_atts_loc = torch.cat([frame_prefix_mask, atts_t5_loc, input_attention_mask_loc], dim=1)
+                max_length=self.max_txt_len, return_tensors="pt").to(device)
+            input_ids_loc = torch.repeat_interleave(input_tokens_loc.input_ids, t, dim=0)
+            input_attention_mask_loc = torch.repeat_interleave(
+                input_tokens_loc.attention_mask, t, dim=0)
+            text_emb = self.t5_model.encoder.embed_tokens(input_ids_loc)
+
+            # 最终 T5 输入结构：
+            # [Frame: 前缀] [Main Image: 前缀] [主图 query] [视频帧 query] [问题文本]
+            parts_emb = [frame_prefix_emb]
+            parts_att = [frame_prefix_mask]
+            if main_q_rep is not None:
+                parts_emb.append(main_prefix_emb)
+                parts_att.append(main_prefix_mask)
+                parts_emb.append(main_q_rep)
+                parts_att.append(main_q_mask)
+            frame_q_mask = torch.ones(frame_q.size()[:-1], dtype=torch.long, device=device)
+            parts_emb.append(frame_q)
+            parts_att.append(frame_q_mask)
+            parts_emb.append(text_emb)
+            parts_att.append(input_attention_mask_loc)
+
+            inputs_embeds_loc = torch.cat(parts_emb, dim=1)
+            encoder_atts_loc = torch.cat(parts_att, dim=1)
 
             outputs_loc = self.t5_model.generate(
                 inputs_embeds=inputs_embeds_loc, attention_mask=encoder_atts_loc,
@@ -822,7 +884,7 @@ class SeViLA(Blip2Base):
                 max_new_tokens=max_length, min_length=min_length, repetition_penalty=repetition_penalty,
                 length_penalty=length_penalty, num_return_sequences=num_captions,
                 return_dict_in_generate=True, output_hidden_states=True, output_scores=True)
-                    
+
             pred_logits_loc = outputs_loc.scores[0]
             loc_yes = pred_logits_loc[:, self.yes_id]
             loc_yes = loc_yes.reshape(b, -1)
