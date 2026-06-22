@@ -2,3 +2,4 @@
 .DS_Store
 # 递归忽略所有子文件夹里的 .DS_Store
 **/.DS_Store
+__pycache__/
