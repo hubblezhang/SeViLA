@@ -16,12 +16,81 @@ from transformers.modeling_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     BaseModelOutputWithPoolingAndCrossAttentions,
 )
-from transformers.modeling_utils import (
-    PreTrainedModel,
-    apply_chunking_to_forward,
-    find_pruneable_heads_and_indices,
-    prune_linear_layer,
-)
+from transformers.modeling_utils import PreTrainedModel
+
+# 新版 transformers 把 apply_chunking_to_forward 等函数从 modeling_utils 中移除了；
+# 做三层回退，先从老路径 import，找不到就 inline。
+def _import_chunker_util():
+    global apply_chunking_to_forward, find_pruneable_heads_and_indices, prune_linear_layer
+    try:
+        from transformers.modeling_utils import (
+            apply_chunking_to_forward,
+            find_pruneable_heads_and_indices,
+            prune_linear_layer,
+        )
+        return
+    except ImportError:
+        pass
+    try:
+        from transformers.pytorch_utils import (
+            apply_chunking_to_forward,
+            find_pruneable_heads_and_indices,
+            prune_linear_layer,
+        )
+        return
+    except ImportError:
+        pass
+    import torch as _torch
+    from torch import nn as _nn
+    def apply_chunking_to_forward(forward_fn, chunk_size, chunk_dim, *input_tensors):
+        assert len(input_tensors) > 0
+        assert chunk_size is not None and chunk_dim is not None
+        if _torch.jit.is_tracing():
+            return forward_fn(*input_tensors)
+        assert all(t.shape[chunk_dim] == input_tensors[0].shape[chunk_dim] for t in input_tensors)
+        num_chunks = max(1, input_tensors[0].shape[chunk_dim] // chunk_size)
+        if input_tensors[0].shape[chunk_dim] % chunk_size != 0:
+            num_chunks += 1
+        if num_chunks == 1:
+            return forward_fn(*input_tensors)
+        chunked_input_tensors = [list(t.chunk(num_chunks, chunk_dim)) for t in input_tensors]
+        outputs = [forward_fn(*t_list) for t_list in zip(*chunked_input_tensors)]
+        if isinstance(outputs[0], _torch.Tensor):
+            return _torch.cat(outputs, dim=chunk_dim)
+        elif isinstance(outputs[0], (list, tuple)):
+            return type(outputs[0])(
+                _torch.cat([out[i] for out in outputs], dim=chunk_dim)
+                for i in range(len(outputs[0]))
+            )
+        else:
+            raise TypeError(f"forward_fn returns {type(outputs[0])} but should return Tensor or list/tuple")
+    def find_pruneable_heads_and_indices(heads, n_heads, head_size, already_pruned_heads):
+        mask = _torch.ones(n_heads, head_size)
+        heads = set(heads) - already_pruned_heads
+        for head in heads:
+            mask[head] = 0
+        mask = mask.view(-1).contiguous().eq(1)
+        index = _torch.arange(len(mask))[mask].long()
+        return heads, index
+    def prune_linear_layer(layer, index, dim=0):
+        index = index.to(layer.weight.device)
+        W = layer.weight.index_select(dim, index).clone().detach()
+        if getattr(layer, "bias", None) is not None:
+            b = layer.bias.clone().detach() if dim == 1 else layer.bias[index].clone().detach()
+        new_size = list(layer.weight.size())
+        new_size[dim] = len(index)
+        new_layer = _nn.Linear(new_size[1], new_size[0], bias=layer.bias is not None).to(
+            layer.weight.device, dtype=layer.weight.dtype)
+        new_layer.weight.requires_grad = False
+        new_layer.weight.copy_(W.contiguous())
+        new_layer.weight.requires_grad = True
+        if getattr(layer, "bias", None) is not None:
+            new_layer.bias.requires_grad = False
+            new_layer.bias.copy_(b.contiguous())
+            new_layer.bias.requires_grad = True
+        return new_layer
+_import_chunker_util()
+del _import_chunker_util
 from transformers.models.bert.configuration_bert import BertConfig
 from transformers.utils import logging
 
