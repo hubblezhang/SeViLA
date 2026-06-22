@@ -658,6 +658,8 @@ class BertPreTrainedModel(PreTrainedModel):
     config_class = BertConfig
     base_model_prefix = "bert"
     _keys_to_ignore_on_load_missing = [r"position_ids"]
+    # 新版 transformers (4.40+) 期望模型类有 all_tied_weights_keys，没有会报错
+    all_tied_weights_keys = {}
 
     def _init_weights(self, module):
         """Initialize the weights"""

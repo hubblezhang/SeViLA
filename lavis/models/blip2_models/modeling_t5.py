@@ -840,6 +840,7 @@ class T5PreTrainedModel(PreTrainedModel):
     is_parallelizable = True
     supports_gradient_checkpointing = True
     _no_split_modules = ["T5Block"]
+    all_tied_weights_keys = {}
 
     @property
     def dummy_inputs(self):

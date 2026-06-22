@@ -436,6 +436,7 @@ class OPTPreTrainedModel(PreTrainedModel):
     supports_gradient_checkpointing = True
     _no_split_modules = ["OPTDecoderLayer"]
     _keys_to_ignore_on_load_unexpected = [r"decoder\.version"]
+    all_tied_weights_keys = {}
 
     def _init_weights(self, module):
         std = self.config.init_std
