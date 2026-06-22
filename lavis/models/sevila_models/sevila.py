@@ -755,27 +755,29 @@ class SeViLA(Blip2Base):
     def encode_image_to_t5_query(self, image_nhwc):
         """
         将一批图像编码成可直接拼进 T5 的 query embedding（脚本可缓存）。
+        关键：视觉编码器 (ViT-G) 是 fp16，序列长度 257 不是 8 的倍数，
+              所以先在 fp16 autocast 下跑 visual_encoder，然后显式转 fp32，
+              让 Qformer 和投影层在 fp32 下运行以避免 CUBLAS 维度问题。
         Args:
             image_nhwc: (N, 3, H, W)，已做过 vis_processors 预处理
         Returns:
-            t5_query: (N, num_query, d_t5)
+            t5_query: (N, num_query, d_t5)，fp32
         """
         device = self.device
         x = image_nhwc.to(device)
-        # 统一用 bfloat16：与 T5 一致，避免 fp16/fp32 混精度的 CUBLAS 错误
-        with torch.cuda.amp.autocast(
-            dtype=torch.bfloat16,
-            enabled=(device != torch.device("cpu")),
-        ):
+        # 1. visual encoder 在 fp16 autocast 下运行（避免序列长度 257 导致的 CUBLAS 问题）
+        with torch.cuda.amp.autocast(enabled=(device != torch.device("cpu"))):
             x = self.visual_encoder(x)
-            x = self.ln_vision_loc(x)
-            atts = torch.ones(x.size()[:-1], dtype=torch.long, device=device)
-            q = self.query_tokens_loc.expand(x.size(0), -1, -1)
-            out = self.Qformer_loc.bert(
-                query_embeds=q, encoder_hidden_states=x,
-                encoder_attention_mask=atts, return_dict=True,
-            )
-            return self.t5_proj_loc(out.last_hidden_state)
+        # 2. 显式转 fp32 给 Qformer，保持 Qformer 在 fp32 稳定
+        x = x.float()
+        x = self.ln_vision_loc(x)
+        atts = torch.ones(x.size()[:-1], dtype=torch.long, device=device)
+        q = self.query_tokens_loc.expand(x.size(0), -1, -1)
+        out = self.Qformer_loc.bert(
+            query_embeds=q, encoder_hidden_states=x,
+            encoder_attention_mask=atts, return_dict=True,
+        )
+        return self.t5_proj_loc(out.last_hidden_state)  # fp32 输出
 
     @torch.no_grad()
     def generate_score(self,
@@ -832,6 +834,11 @@ class SeViLA(Blip2Base):
 
         # ------- 文本 prompt 处理 -------
         with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+            # 确保 query embedding 与 T5 (bf16) 精度一致
+            if main_q is not None:
+                main_q = main_q.bfloat16()
+            frame_q = frame_q.bfloat16()
+
             # Frame: 前缀（每个视频帧都加）
             frame_prefix = self.t5_tokenizer(
                 self.frame_prefix, padding="longest", add_special_tokens=False,
@@ -1219,18 +1226,5 @@ class SeViLA(Blip2Base):
         # need load blip-2 q-former ckpt to q-former_loc
         if 'loc' in task and 'qvh' not in task:
            model.load_qformer_loc()
-
-        # 将 Q-former 与投影层转换为 bfloat16，与 T5 保持一致，避免 fp16/fp32/bf16 混精度导致 CUBLAS 错误
-        _bf16_targets = ('Qformer', 't5_proj', 'ln_vision', 'query_tokens')
-        for name, param in model.named_parameters():
-            if 'visual_encoder' in name or 't5_model' in name:
-                continue
-            if any(t in name for t in _bf16_targets):
-                param.data = param.data.bfloat16()
-        for name, buffer in model.named_buffers():
-            if 'visual_encoder' in name or 't5_model' in name:
-                continue
-            if buffer.is_floating_point():
-                buffer.data = buffer.data.bfloat16()
 
         return model
