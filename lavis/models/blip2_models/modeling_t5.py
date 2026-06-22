@@ -1450,13 +1450,13 @@ num_heads)`.
     T5_START_DOCSTRING,
 )
 class T5Model(T5PreTrainedModel):
-    _keys_to_ignore_on_load_missing = [
+    _keys_to_ignore_on_load_missing = {
         r"encoder.embed_tokens.weight",
         r"decoder.embed_tokens.weight",
-    ]
-    _keys_to_ignore_on_load_unexpected = [
+    }
+    _keys_to_ignore_on_load_unexpected = {
         r"decoder.block.0.layer.1.EncDecAttention.relative_attention_bias.weight",
-    ]
+    }
 
     def __init__(self, config: T5Config):
         super().__init__(config)
@@ -1650,14 +1650,14 @@ class T5Model(T5PreTrainedModel):
     """T5 Model with a `language modeling` head on top.""", T5_START_DOCSTRING
 )
 class T5ForConditionalGeneration(T5PreTrainedModel):
-    _keys_to_ignore_on_load_missing = [
+    _keys_to_ignore_on_load_missing = {
         r"encoder.embed_tokens.weight",
         r"decoder.embed_tokens.weight",
         r"lm_head.weight",
-    ]
-    _keys_to_ignore_on_load_unexpected = [
+    }
+    _keys_to_ignore_on_load_unexpected = {
         r"decoder.block.0.layer.1.EncDecAttention.relative_attention_bias.weight",
-    ]
+    }
 
     def __init__(self, config: T5Config):
         super().__init__(config)
