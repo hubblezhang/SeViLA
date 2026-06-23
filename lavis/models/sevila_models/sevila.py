@@ -5,6 +5,8 @@
  For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause
 """
 import logging
+import os
+from contextlib import nullcontext
 
 import copy
 import torch
@@ -33,6 +35,33 @@ class SeViLA(Blip2Base):
         "pretrain_flant5xxl": "configs/models/blip2/blip2_pretrain_flant5xxl.yaml",
         "caption_coco_flant5xl": "configs/models/blip2/blip2_caption_flant5xl.yaml",
     }
+
+    @staticmethod
+    def _get_t5_runtime_dtype():
+        """
+        当前运行环境的 cuBLAS 对 fp16/bf16 GEMM 都可能报
+        CUBLAS_STATUS_INVALID_VALUE，因此默认用 fp32 保证 creator_plus
+        离线打分稳定；如需更省显存，可设置 SEVILA_T5_DTYPE=fp16/bf16。
+        """
+        if not torch.cuda.is_available():
+            return torch.float32
+
+        dtype = os.environ.get("SEVILA_T5_DTYPE", "").lower()
+        if dtype in ("fp16", "float16", "half"):
+            return torch.float16
+        if dtype in ("bf16", "bfloat16"):
+            try:
+                if torch.cuda.is_bf16_supported():
+                    return torch.bfloat16
+            except Exception:
+                pass
+        return torch.float32
+
+    @staticmethod
+    def _autocast_ctx(device, dtype=None, enabled=True):
+        if not enabled or device.type == "cpu" or dtype is None:
+            return nullcontext()
+        return torch.amp.autocast(device_type=device.type, dtype=dtype)
 
     def __init__( self, img_size=224, drop_path_rate=0,
         use_grad_checkpoint=False, vit_precision="fp16", freeze_vit=True,
@@ -63,11 +92,15 @@ class SeViLA(Blip2Base):
         t5_config.dense_act_fn = "gelu"
         self.t5_model = T5ForConditionalGeneration.from_pretrained(
         t5_model, config=t5_config)
+        self.t5_dtype = self._get_t5_runtime_dtype()
 
         # freeze T5
         for name, param in self.t5_model.named_parameters():
             param.requires_grad = False
-            param.data = param.data.bfloat16() 
+            if self.t5_dtype != torch.float32:
+                param.data = param.data.to(self.t5_dtype)
+
+        logging.info("SeViLA T5 runtime dtype: %s", self.t5_dtype)
 
         # Q-Former for Answerer
         self.Qformer, self.query_tokens = self.init_Qformer(
@@ -765,9 +798,24 @@ class SeViLA(Blip2Base):
         """
         device = self.device
         x = image_nhwc.to(device)
-        # 1. visual encoder 在 fp16 autocast 下运行（避免序列长度 257 导致的 CUBLAS 问题）
-        with torch.cuda.amp.autocast(enabled=(device != torch.device("cpu"))):
-            x = self.visual_encoder(x)
+        # 1. 默认沿用 fp16 ViT；部分 CUDA/cuBLAS 组合对 ViT-G attention 的
+        #    fp16 strided-batched GEMM 会报 CUBLAS_STATUS_INVALID_VALUE，
+        #    这里自动把 ViT 回退到 fp32 后重试，避免整条视频被跳过。
+        try:
+            with self._autocast_ctx(device, torch.float16, enabled=(device.type == "cuda")):
+                x = self.visual_encoder(x)
+        except RuntimeError as e:
+            if "CUBLAS_STATUS_INVALID_VALUE" not in str(e):
+                raise
+            logging.warning(
+                "ViT fp16 CUDA GEMM failed, retrying visual encoder in fp32: %s", e
+            )
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+            self.visual_encoder.float()
+            x = image_nhwc.to(device=device, dtype=torch.float32)
+            with self._autocast_ctx(device, None, enabled=False):
+                x = self.visual_encoder(x)
         # 2. 显式转 fp32 给 Qformer，保持 Qformer 在 fp32 稳定
         x = x.float()
         x = self.ln_vision_loc(x)
@@ -833,11 +881,15 @@ class SeViLA(Blip2Base):
         num_q = frame_q.size(-2)
 
         # ------- 文本 prompt 处理 -------
-        with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-            # 确保 query embedding 与 T5 (bf16) 精度一致
+        with self._autocast_ctx(
+            device,
+            self.t5_dtype if self.t5_dtype in (torch.float16, torch.bfloat16) else None,
+            enabled=(device.type == "cuda"),
+        ):
+            # 确保 query embedding 与 T5 运行精度一致
             if main_q is not None:
-                main_q = main_q.bfloat16()
-            frame_q = frame_q.bfloat16()
+                main_q = main_q.to(self.t5_dtype)
+            frame_q = frame_q.to(self.t5_dtype)
 
             # Frame: 前缀（每个视频帧都加）
             frame_prefix = self.t5_tokenizer(

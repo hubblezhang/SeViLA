@@ -6,6 +6,7 @@
 # https://github.com/facebookresearch/dino
 # --------------------------------------------------------'
 import math
+import logging
 from functools import partial
 
 import torch
@@ -114,6 +115,17 @@ class Attention(nn.Module):
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(all_head_dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
+        self._force_safe_attention = False
+
+    @staticmethod
+    def _safe_matmul(left, right, compute_dtype=torch.float32):
+        """逐个 head 做 2D matmul，避开部分 CUDA 环境的 strided-batched GEMM bug。"""
+        out_shape = left.shape[:-1] + right.shape[-1:]
+        left_2d = left.reshape(-1, left.shape[-2], left.shape[-1]).to(compute_dtype)
+        right_2d = right.reshape(-1, right.shape[-2], right.shape[-1]).to(compute_dtype)
+        return torch.stack(
+            [torch.matmul(l, r) for l, r in zip(left_2d, right_2d)], dim=0
+        ).reshape(out_shape)
 
     def forward(self, x, rel_pos_bias=None):
         B, N, C = x.shape
@@ -126,7 +138,22 @@ class Attention(nn.Module):
         q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
 
         q = q * self.scale
-        attn = (q @ k.transpose(-2, -1))
+        k_t = k.transpose(-2, -1)
+        if self._force_safe_attention:
+            attn = self._safe_matmul(q, k_t)
+        else:
+            try:
+                attn = (q @ k_t)
+            except RuntimeError as e:
+                if "CUBLAS_STATUS_INVALID_VALUE" not in str(e):
+                    raise
+                logging.warning(
+                    "EVA attention batched q@k failed; using safe per-head matmul: %s", e
+                )
+                self._force_safe_attention = True
+                if q.device.type == "cuda":
+                    torch.cuda.empty_cache()
+                attn = self._safe_matmul(q, k_t)
 
         if self.relative_position_bias_table is not None:
             relative_position_bias = \
@@ -142,7 +169,22 @@ class Attention(nn.Module):
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
 
-        x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
+        if self._force_safe_attention:
+            x = self._safe_matmul(attn, v, compute_dtype=attn.dtype)
+        else:
+            try:
+                x = (attn @ v)
+            except RuntimeError as e:
+                if "CUBLAS_STATUS_INVALID_VALUE" not in str(e):
+                    raise
+                logging.warning(
+                    "EVA attention batched attn@v failed; using safe per-head matmul: %s", e
+                )
+                self._force_safe_attention = True
+                if attn.device.type == "cuda":
+                    torch.cuda.empty_cache()
+                x = self._safe_matmul(attn, v, compute_dtype=attn.dtype)
+        x = x.transpose(1, 2).reshape(B, N, -1)
         x = self.proj(x)
         x = self.proj_drop(x)
         return x

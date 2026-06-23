@@ -143,6 +143,17 @@ class BertSelfAttention(nn.Module):
                 2 * config.max_position_embeddings - 1, self.attention_head_size
             )
         self.save_attention = False
+        self._force_safe_attention = False
+
+    @staticmethod
+    def _safe_matmul(left, right, compute_dtype=torch.float32):
+        """逐个 head 做 2D matmul，避开部分 CUDA 环境的 strided-batched GEMM bug。"""
+        out_shape = left.shape[:-1] + right.shape[-1:]
+        left_2d = left.reshape(-1, left.shape[-2], left.shape[-1]).to(compute_dtype)
+        right_2d = right.reshape(-1, right.shape[-2], right.shape[-1]).to(compute_dtype)
+        return torch.stack(
+            [torch.matmul(l, r) for l, r in zip(left_2d, right_2d)], dim=0
+        ).reshape(out_shape)
 
     def save_attn_gradients(self, attn_gradients):
         self.attn_gradients = attn_gradients
@@ -200,7 +211,22 @@ class BertSelfAttention(nn.Module):
         past_key_value = (key_layer, value_layer)
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        key_layer_t = key_layer.transpose(-1, -2)
+        if self._force_safe_attention:
+            attention_scores = self._safe_matmul(query_layer, key_layer_t)
+        else:
+            try:
+                attention_scores = torch.matmul(query_layer, key_layer_t)
+            except RuntimeError as e:
+                if "CUBLAS_STATUS_INVALID_VALUE" not in str(e):
+                    raise
+                logger.warning(
+                    "QFormer attention batched q@k failed; using safe per-head matmul: %s", e
+                )
+                self._force_safe_attention = True
+                if query_layer.device.type == "cuda":
+                    torch.cuda.empty_cache()
+                attention_scores = self._safe_matmul(query_layer, key_layer_t)
 
         if (
             self.position_embedding_type == "relative_key"
@@ -259,7 +285,26 @@ class BertSelfAttention(nn.Module):
         if head_mask is not None:
             attention_probs_dropped = attention_probs_dropped * head_mask
 
-        context_layer = torch.matmul(attention_probs_dropped, value_layer)
+        if self._force_safe_attention:
+            context_layer = self._safe_matmul(
+                attention_probs_dropped, value_layer, compute_dtype=attention_probs_dropped.dtype
+            )
+        else:
+            try:
+                context_layer = torch.matmul(attention_probs_dropped, value_layer)
+            except RuntimeError as e:
+                if "CUBLAS_STATUS_INVALID_VALUE" not in str(e):
+                    raise
+                logger.warning(
+                    "QFormer attention batched attn@v failed; using safe per-head matmul: %s", e
+                )
+                self._force_safe_attention = True
+                if attention_probs_dropped.device.type == "cuda":
+                    torch.cuda.empty_cache()
+                context_layer = self._safe_matmul(
+                    attention_probs_dropped, value_layer,
+                    compute_dtype=attention_probs_dropped.dtype,
+                )
 
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
@@ -709,6 +754,20 @@ class BertModel(BertPreTrainedModel):
         """
         for layer, heads in heads_to_prune.items():
             self.encoder.layer[layer].attention.prune_heads(heads)
+
+    def get_head_mask(self, head_mask, num_hidden_layers, is_attention_chunked=False):
+        """Compatibility shim for newer transformers versions that removed this helper."""
+        if head_mask is None:
+            return [None] * num_hidden_layers
+
+        if head_mask.dim() == 1:
+            head_mask = head_mask[None, None, :, None, None]
+            head_mask = head_mask.expand(num_hidden_layers, -1, -1, -1, -1)
+        elif head_mask.dim() == 2:
+            head_mask = head_mask[:, None, :, None, None]
+        if is_attention_chunked:
+            head_mask = head_mask.unsqueeze(-1)
+        return head_mask.to(dtype=self.dtype)
 
     def get_extended_attention_mask(
         self,

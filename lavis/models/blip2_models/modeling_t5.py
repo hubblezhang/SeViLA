@@ -34,6 +34,10 @@ from transformers.modeling_outputs import (
     Seq2SeqModelOutput,
 )
 from transformers.modeling_utils import PreTrainedModel
+try:
+    from transformers.generation import GenerationMixin
+except ImportError:
+    from transformers.generation.utils import GenerationMixin
 from lavis.common.lavis_pytorch_utils import (
     ALL_LAYERNORM_LAYERS,
     find_pruneable_heads_and_indices,
@@ -374,6 +378,17 @@ class T5Attention(nn.Module):
             )
         self.pruned_heads = set()
         self.gradient_checkpointing = False
+        self._force_safe_attention = False
+
+    @staticmethod
+    def _safe_matmul(left, right, compute_dtype=torch.float32):
+        """逐个 head 做 2D matmul，避开部分 CUDA 环境的 strided-batched GEMM bug。"""
+        out_shape = left.shape[:-1] + right.shape[-1:]
+        left_2d = left.reshape(-1, left.shape[-2], left.shape[-1]).to(compute_dtype)
+        right_2d = right.reshape(-1, right.shape[-2], right.shape[-1]).to(compute_dtype)
+        return torch.stack(
+            [torch.matmul(l, r) for l, r in zip(left_2d, right_2d)], dim=0
+        ).reshape(out_shape)
 
     def prune_heads(self, heads):
         if len(heads) == 0:
@@ -560,9 +575,24 @@ class T5Attention(nn.Module):
         )
 
         # compute scores
-        scores = torch.matmul(
-            query_states, key_states.transpose(3, 2)
-        )  # equivalent of torch.einsum("bnqd,bnkd->bnqk", query_states, key_states), compatible with onnx op>9
+        key_states_t = key_states.transpose(3, 2)
+        if self._force_safe_attention:
+            scores = self._safe_matmul(query_states, key_states_t)
+        else:
+            try:
+                scores = torch.matmul(
+                    query_states, key_states_t
+                )  # equivalent of torch.einsum("bnqd,bnkd->bnqk", query_states, key_states), compatible with onnx op>9
+            except RuntimeError as e:
+                if "CUBLAS_STATUS_INVALID_VALUE" not in str(e):
+                    raise
+                logger.warning(
+                    "T5 attention batched q@k failed; using safe per-head matmul: %s", e
+                )
+                self._force_safe_attention = True
+                if query_states.device.type == "cuda":
+                    torch.cuda.empty_cache()
+                scores = self._safe_matmul(query_states, key_states_t)
 
         if position_bias is None:
             if not self.has_relative_attention_bias:
@@ -607,9 +637,26 @@ class T5Attention(nn.Module):
         if layer_head_mask is not None:
             attn_weights = attn_weights * layer_head_mask
 
-        attn_output = unshape(
-            torch.matmul(attn_weights, value_states)
-        )  # (batch_size, seq_length, dim)
+        if self._force_safe_attention:
+            attn_output = self._safe_matmul(
+                attn_weights, value_states, compute_dtype=attn_weights.dtype
+            )
+        else:
+            try:
+                attn_output = torch.matmul(attn_weights, value_states)
+            except RuntimeError as e:
+                if "CUBLAS_STATUS_INVALID_VALUE" not in str(e):
+                    raise
+                logger.warning(
+                    "T5 attention batched attn@v failed; using safe per-head matmul: %s", e
+                )
+                self._force_safe_attention = True
+                if attn_weights.device.type == "cuda":
+                    torch.cuda.empty_cache()
+                attn_output = self._safe_matmul(
+                    attn_weights, value_states, compute_dtype=attn_weights.dtype
+                )
+        attn_output = unshape(attn_output)  # (batch_size, seq_length, dim)
         attn_output = self.o(attn_output)
 
         present_key_value_state = (
@@ -975,6 +1022,20 @@ class T5Stack(T5PreTrainedModel):
         self.model_parallel = False
         self.device_map = None
         self.gradient_checkpointing = False
+
+    def get_head_mask(self, head_mask, num_hidden_layers, is_attention_chunked=False):
+        """Compatibility shim for newer transformers versions that removed this helper."""
+        if head_mask is None:
+            return [None] * num_hidden_layers
+
+        if head_mask.dim() == 1:
+            head_mask = head_mask[None, None, :, None, None]
+            head_mask = head_mask.expand(num_hidden_layers, -1, -1, -1, -1)
+        elif head_mask.dim() == 2:
+            head_mask = head_mask[:, None, :, None, None]
+        if is_attention_chunked:
+            head_mask = head_mask.unsqueeze(-1)
+        return head_mask.to(dtype=self.dtype)
 
     @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def parallelize(self, device_map=None):
@@ -1649,7 +1710,7 @@ class T5Model(T5PreTrainedModel):
 @add_start_docstrings(
     """T5 Model with a `language modeling` head on top.""", T5_START_DOCSTRING
 )
-class T5ForConditionalGeneration(T5PreTrainedModel):
+class T5ForConditionalGeneration(T5PreTrainedModel, GenerationMixin):
     _keys_to_ignore_on_load_missing = {
         r"encoder.embed_tokens.weight",
         r"decoder.embed_tokens.weight",
